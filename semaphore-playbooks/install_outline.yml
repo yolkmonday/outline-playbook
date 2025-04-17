@@ -3,13 +3,6 @@
   gather_facts: false
   become: true
   tasks:
-    - name: Install Docker
-      shell: |
-        curl -fsSL https://get.docker.com -o get-docker.sh
-        sh get-docker.sh
-      args:
-        executable: /bin/bash
-
     - name: Run Outline container
       shell: |
         docker run -d --name outline-server \
