@@ -1,0 +1,36 @@
+- name: Install Outline VPN via Docker
+  hosts: all
+  gather_facts: false
+  become: true
+  tasks:
+    - name: Install Docker
+      shell: |
+        curl -fsSL https://get.docker.com -o get-docker.sh
+        sh get-docker.sh
+      args:
+        executable: /bin/bash
+
+    - name: Run Outline container
+      shell: |
+        docker run -d --name outline-server \
+        -v $HOME/outline:/root/.config/outline-manager \
+        -p 1024:1024 -p 2016:2016 -p 2017:2017 -p 2018:2018 \
+        -p 2019:2019 -p 2020:2020 -p 80:80 -p 443:443 \
+        quay.io/outline/shadowbox
+      args:
+        executable: /bin/bash
+      ignore_errors: yes
+
+    - name: Wait for container to initialize
+      pause:
+        seconds: 10
+
+    - name: Get Outline API JSON
+      shell: docker logs outline-server | grep -o '{.*}' | tail -1
+      register: outline_logs
+      failed_when: outline_logs.stdout == ""
+
+    - name: Save API JSON to file
+      copy:
+        content: "{{ outline_logs.stdout }}"
+        dest: /root/outline-api.json
