@@ -1,29 +1,68 @@
-- name: Install Outline VPN via Docker
+- name: Install Outline VPN and Send API to Telegram
   hosts: all
   gather_facts: false
   become: true
+
+  vars:
+    telegram_bot_token: "7863276254:AAESQyj_pHTwoWmMgC9sU0Hlz_rY3FjKZLg"
+    telegram_chat_id: "215742545"
+
   tasks:
-    - name: Run Outline container
+    - name: Ensure wget and curl are installed
+      apt:
+        name: "{{ item }}"
+        state: present
+        update_cache: yes
+      loop:
+        - wget
+        - curl
+
+    - name: Run Outline install script
       shell: |
-        docker run -d --name outline-server \
-        -v $HOME/outline:/root/.config/outline-manager \
-        -p 1024:1024 -p 2016:2016 -p 2017:2017 -p 2018:2018 \
-        -p 2019:2019 -p 2020:2020 -p 80:80 -p 443:443 \
-        quay.io/outline/shadowbox
+        sudo bash -c "$(wget -qO- https://raw.githubusercontent.com/Jigsaw-Code/outline-server/master/src/server_manager/install_scripts/install_server.sh)"
+      register: install_result
       args:
         executable: /bin/bash
-      ignore_errors: yes
 
-    - name: Wait for container to initialize
-      pause:
-        seconds: 10
+    - name: Extract API JSON from output
+      set_fact:
+        outline_api: "{{ install_result.stdout | regex_search('{.*}', '\\\\{.*\\\\}') }}"
 
-    - name: Get Outline API JSON
-      shell: docker logs outline-server | grep -o '{.*}' | tail -1
-      register: outline_logs
-      failed_when: outline_logs.stdout == ""
+    - name: Print API JSON (optional)
+      debug:
+        msg: |
+          ==== {{ inventory_hostname }} ====
+          {{ outline_api }}
+      when: outline_api != ""
 
-    - name: Save API JSON to file
-      copy:
-        content: "{{ outline_logs.stdout }}"
-        dest: /root/outline-api.json
+    - name: Send API JSON to Telegram
+      uri:
+        url: "https://api.telegram.org/bot{{ telegram_bot_token }}/sendMessage"
+        method: POST
+        headers:
+          Content-Type: "application/json"
+        body_format: json
+        body:
+          chat_id: "{{ telegram_chat_id }}"
+          text: |
+            ✅ *Outline VPN Installed*
+            *Host:* `{{ inventory_hostname }}`
+            *API JSON:*
+            ```json
+            {{ outline_api }}
+            ```
+          parse_mode: markdown
+      when: outline_api != ""
+
+    - name: Notify if Outline install failed
+      uri:
+        url: "https://api.telegram.org/bot{{ telegram_bot_token }}/sendMessage"
+        method: POST
+        headers:
+          Content-Type: "application/json"
+        body_format: json
+        body:
+          chat_id: "{{ telegram_chat_id }}"
+          text: "❌ Gagal install Outline VPN di *{{ inventory_hostname }}*."
+          parse_mode: markdown
+      when: outline_api == ""
